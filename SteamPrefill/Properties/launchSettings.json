@@ -2,7 +2,7 @@
   "profiles": {
     "Prefill All": {
       "commandName": "Project",
-      "commandLineArgs": "prefill --all --force --verbose"
+      "commandLineArgs": "prefill --all --verbose"
     },
     "Prefill All - No Download": {
       "commandName": "Project",
@@ -34,11 +34,15 @@
     },
     "Benchmark - Run": {
       "commandName": "Project",
-      "commandLineArgs": "benchmark run"
+      "commandLineArgs": "benchmark run -c 4 -i 2"
     },
     "Clear cache": {
       "commandName": "Project",
-      "commandLineArgs": "clear-cache"
+      "commandLineArgs": "clear-cache -y"
+    },
+    "Validate": {
+      "commandName": "Project",
+      "commandLineArgs": "validate --force --verbose"
     }
   }
 }

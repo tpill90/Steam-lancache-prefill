@@ -1,4 +1,7 @@
-﻿namespace SteamPrefill.Handlers
+﻿using Microsoft.IO;
+using System;
+
+namespace SteamPrefill.Handlers
 {
     public sealed class DownloadHandler : IDisposable
     {
@@ -43,6 +46,7 @@
             await _ansiConsole.CreateSpectreProgress(downloadArgs.TransferSpeedUnit).StartAsync(async ctx =>
             {
                 // Run the initial download
+                //TODO needs to switch to saying Validating instead of Downloading if validation is running
                 failedRequests = await AttemptDownloadAsync(ctx, "Downloading..", queuedRequests, downloadArgs);
 
                 // Handle any failed requests
@@ -65,6 +69,9 @@
         }
 
         //TODO I don't like the number of parameters here, should maybe rethink the way this is written.
+        //TODO move somewhere.  I wonder how this affects performance
+        public static readonly RecyclableMemoryStreamManager MemoryStreamManager = new RecyclableMemoryStreamManager();
+
         /// <summary>
         /// Attempts to download the specified requests.  Returns a list of any requests that have failed for any reason.
         /// </summary>
@@ -83,6 +90,7 @@
             {
                 try
                 {
+                    using var cts = new CancellationTokenSource();
                     var url = $"http://{_lancacheAddress}/depot/{request.DepotId}/chunk/{request.ChunkId}";
                     if (forceRecache)
                     {
@@ -90,28 +98,48 @@
                     }
                     using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
                     requestMessage.Headers.Host = cdnServer.Host;
+                    var response = await _client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                    await using Stream responseStream = await response.Content.ReadAsStreamAsync(cts.Token);
 
-                    using var cts = new CancellationTokenSource();
-                    using var response = await _client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-                    using Stream responseStream = await response.Content.ReadAsStreamAsync(cts.Token);
-                    response.EnsureSuccessStatusCode();
+                    //TODO Copy to another stream for some reason?
+                    var outputStream = MemoryStreamManager.GetStream();
+                    await responseStream.CopyToAsync(outputStream, cts.Token);
 
-                    // Don't save the data anywhere, so we don't have to waste time writing it to disk.
-                    var buffer = new byte[4096];
-                    while (await responseStream.ReadAsync(buffer, cts.Token) != 0)
+                    // Decrypt first
+                    byte[] encryptedChunkData = outputStream.ToArray();
+
+                    // TODO for some reason not getting the depot key here.  MW2 beta is failing for example
+                    if (request.DepotKey == null)
                     {
+                        return;
                     }
+                    byte[] decrypted = CryptoHelper.SymmetricDecrypt(encryptedChunkData, request.DepotKey);
+                    // TODO This is a large amount of the performance hit
+                    byte[] decompressed = DecompressTheShit(decrypted);
+
+                    byte[] computedHash = CryptoHelper.AdlerHash(decompressed);
+                    string computedHashString = HexMate.Convert.ToHexString(computedHash, HexFormattingOptions.Lowercase);
+
+                    if (computedHashString != request.ExpectedChecksumString)
+                    {
+                        throw new ChunkChecksumFailedException($"Request {url} failed CRC check.  Will attempt repair");
+                    }
+                }
+                catch (ChunkChecksumFailedException e)
+                {
+                    failedRequests.Add(request);
+                    _ansiConsole.LogMarkupLine(Red(e.Message));
+                    FileLogger.LogExceptionNoStackTrace(e.Message, e);
                 }
                 catch (Exception e)
                 {
+                    _ansiConsole.LogMarkupVerbose(Red($"Request /depot/{request.DepotId}/chunk/{request.ChunkId} failed : {e.GetType()}"));
                     failedRequests.Add(request);
-                    _ansiConsole.LogMarkupLine(Red($"Request /depot/{request.DepotId}/chunk/{request.ChunkId} failed : {e.GetType()}"));
                     FileLogger.LogExceptionNoStackTrace($"Request /depot/{request.DepotId}/chunk/{request.ChunkId} failed", e);
                 }
                 progressTask.Increment(request.CompressedLength);
             });
 
-            //TODO In the scenario where a user still had all requests fail, potentially display a warning that there is an underlying issue
             // Only return the connections for reuse if there were no errors
             if (failedRequests.IsEmpty)
             {
@@ -121,6 +149,17 @@
             // Making sure the progress bar is always set to its max value, in-case some unexpected error leaves the progress bar showing as unfinished
             progressTask.Increment(progressTask.MaxValue);
             return failedRequests;
+        }
+
+        private static byte[] DecompressTheShit(byte[] decrypted)
+        {
+            if (decrypted.Length > 1 && decrypted[0] == 'V' && decrypted[1] == 'Z')
+            {
+                // LZMA
+                return VZipUtil.Decompress(decrypted);
+            }
+            // Deflate
+            return ZipUtil.Decompress(decrypted);
         }
 
         public void Dispose()

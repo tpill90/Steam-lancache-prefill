@@ -1,5 +1,6 @@
 namespace SteamPrefill.Settings
 {
+    //TODO move to root folder
     public static class AppConfig
     {
         static AppConfig()
@@ -57,7 +58,7 @@ namespace SteamPrefill.Settings
         /// <summary>
         /// Increment when there is a breaking change made to the files in the cache directory
         /// </summary>
-        private const string CacheDirVersion = "v1";
+        private const string CacheDirVersion = "v2";
 
         /// <summary>
         /// Contains user configuration.  Should not be deleted, doing so will reset the app back to defaults.

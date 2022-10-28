@@ -74,7 +74,8 @@
     public readonly struct ChunkData
     {
         /// <summary>
-        /// SHA-1 hash of the chunk, used as its Id.
+        /// SHA-1 hash of the chunk, used as its Id.  Always 20 bytes, but converted to a string so it can be
+        /// directly used to make a web request.
         /// </summary>
         [ProtoMember(1)]
         public readonly string ChunkId;
@@ -85,10 +86,23 @@
         [ProtoMember(2)]
         public readonly uint CompressedLength;
 
+        /// <summary>
+        /// Adler-32 hash, always 4 bytes
+        /// </summary>
+        [ProtoMember(3)]
+        public readonly byte[] Checksum;
+
+        //TODO remove?
+        [ProtoMember(4)]
+        public readonly string ChecksumString;
+
         public ChunkData(DepotManifest.ChunkData sourceChunk)
         {
             ChunkId = HexMate.Convert.ToHexString(sourceChunk.ChunkID, HexFormattingOptions.Lowercase);
             CompressedLength = sourceChunk.CompressedLength;
+
+            Checksum = sourceChunk.Checksum;
+            ChecksumString = HexMate.Convert.ToHexString(sourceChunk.Checksum, HexFormattingOptions.Lowercase);
         }
 
         public override string ToString()

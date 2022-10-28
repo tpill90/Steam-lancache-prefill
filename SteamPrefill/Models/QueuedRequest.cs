@@ -18,11 +18,29 @@
         [ProtoMember(3)]
         public readonly uint CompressedLength;
 
-        public QueuedRequest(Manifest depotManifest, ChunkData chunk)
+        /// <summary>
+        /// Adler-32 hash, always 4 bytes
+        /// </summary>
+        [ProtoMember(4)]
+        public readonly byte[] ExpectedChecksum;
+
+        //TODO remove?
+        [ProtoMember(5)]
+        public readonly string ExpectedChecksumString;
+
+        [ProtoMember(6)]
+        public readonly byte[] DepotKey;
+
+        public QueuedRequest(Manifest depotManifest, ChunkData chunk, byte[] depotKey)
         {
             DepotId = depotManifest.DepotId;
             ChunkId = chunk.ChunkId;
             CompressedLength = chunk.CompressedLength;
+
+            ExpectedChecksum = chunk.Checksum;
+            ExpectedChecksumString = chunk.ChecksumString;
+
+            DepotKey = depotKey;
         }
 
         public override string ToString()
